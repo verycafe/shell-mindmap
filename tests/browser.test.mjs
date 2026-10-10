@@ -116,6 +116,31 @@ test('entries removed during listing are skipped but stat permission errors prop
   } finally {fs.lstatSync = lstat;}
 });
 
+test('unrelated system files are not statted while candidate metadata errors remain visible', t => {
+  const folder = directory(t);
+  const systemFile = path.join(folder, 'DumpStack.log.tmp');
+  fs.writeFileSync(systemFile, 'system file');
+  const child = path.join(folder, 'notes');
+  fs.mkdirSync(child);
+  const file = map(folder, 'visible.MM');
+  const lstat = fs.lstatSync;
+  const reads = [];
+  let failing = systemFile;
+  try {
+    fs.lstatSync = (target, ...options) => {
+      reads.push(target);
+      if (target === failing) throw Object.assign(new Error('invalid metadata'), {code: 'EINVAL'});
+      return lstat(target, ...options);
+    };
+    assert.deepEqual(listDirectory(folder).map(entry => entry.file), [child, file]);
+    assert.equal(reads.includes(systemFile), false);
+    for (const candidate of [child, file, folder]) {
+      failing = candidate;
+      assert.throws(() => listDirectory(folder), error => error.code === 'EINVAL');
+    }
+  } finally {fs.lstatSync = lstat;}
+});
+
 test('directory read errors are not disguised as an empty directory', t => {
   const folder = directory(t);
   const readdir = fs.readdirSync;

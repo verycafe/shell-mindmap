@@ -25,8 +25,12 @@ export function listDirectory(input: string, showHidden = false): BrowserEntry[]
     throw new StorageError('浏览路径不是普通目录（不支持符号链接）：' + directory, 'INVALID_PATH');
   }
   const entries: BrowserEntry[] = [];
-  for (const name of fs.readdirSync(directory)) {
+  for (const entry of fs.readdirSync(directory, {withFileTypes: true})) {
+    const name = entry.name;
     if (!showHidden && name.startsWith('.')) continue;
+    // Unrelated Windows system files may reject lstat (for example DumpStack.log.tmp).
+    // Read metadata only for entries that can appear in the browser.
+    if (!entry.isDirectory() && !(entry.isFile() && name.toLowerCase().endsWith('.mm'))) continue;
     const file = path.join(directory, name);
     let stat: fs.Stats;
     try {stat = fs.lstatSync(file);} catch (error) {

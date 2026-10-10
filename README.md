@@ -2,13 +2,13 @@
 
 在终端里用键盘整理脑图。基于 TypeScript、React 和 Ink，文件保存在本地，运行时无需 AI 或云服务。
 
-- **目录浏览**：从当前工作目录开始，左侧目录树、右侧脑图列表，支持筛选与逐层展开。
-- **脑图编辑**：中文与 emoji 输入、折叠、搜索、分支移动／复制、撤销与重做。
+- **目录浏览**：从当前工作目录开始，左侧目录树、右侧脑图列表，忽略无关文件，支持筛选与逐层展开。
+- **脑图编辑**：多语言文字与 emoji 输入（Unicode）、折叠、搜索、分支移动／复制、撤销与重做。
 - **布局与保存**：向右或双侧布局，兼容 `.mm` 文件，支持 Markdown 大纲导入导出、原子保存和崩溃恢复。
 
 ## 安装
 
-需要 **Node.js 22+**、**npm 11.10.0+**，以及支持 ANSI 和 UTF-8 的终端。
+需要 Git、**Node.js 22.9+**、**npm 11.10.0+**，以及支持 ANSI 和 UTF-8 的终端。可用 `node --version` 和 `npm --version` 检查版本；Node.js 自带的 npm 不一定满足要求。
 
 ```sh
 git clone https://github.com/verycafe/shell-mindmap.git
@@ -59,10 +59,3 @@ npm run test:pty
 ```
 
 PTY 测试需要 macOS/Linux 与 Python 3。仓库提供 macOS、Linux、Windows 的 CI 配置；本机验证环境为 macOS，其他系统的真实终端体验仍需验证。依赖安装沿用锁文件，`.npmrc` 要求新解析的版本已发布至少 7 天。
-
-## 文档
-
-- [完整使用指南](docs/USAGE.md)
-- [架构说明](docs/ARCHITECTURE.md)
-- [文件与配置格式](docs/FORMATS.md)
-- [示例脑图](examples/project.mm)
