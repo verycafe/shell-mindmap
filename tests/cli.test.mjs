@@ -64,6 +64,7 @@ test('CLI read-only config and keys do not write default settings or create dire
   assert.equal(success(['config', 'get', 'save-dir']), '\n');
   assert.match(success(['keys']), /child\s+Tab/u);
   assert.match(success(['keys', 'list']), /search\s+f\s/u);
+  assert.match(success(['keys', 'list']), /delete\s+d \/ Delete \/ Backspace\s+删除分支/u);
   assert.equal(fs.existsSync(config), false);
   assert.equal(fs.existsSync(path.join(home, 'Shell Mindmap')), false);
 });
@@ -224,6 +225,29 @@ test('CLI malformed imports fail without touching an existing output or creating
   fs.writeFileSync(source, Buffer.from([0xff, 0xfe]));
   failure(['import', source, '-o', 'utf8.mm']);
   assert.equal(fs.existsSync(path.join(workspace, 'utf8.mm')), false);
+});
+
+test('CLI imports rootless and multi-heading outlines beyond previous size limits without losing content', t => {
+  const {workspace, success} = setup(t);
+  const longLabel = '多语言 العربية हिन्दी 🚀 '.repeat(30);
+  const deep = Array.from({length: 110}, (_, index) => '    '.repeat(index) + '- 深层 ' + index);
+  const wide = Array.from({length: 510}, (_, index) => '- 条目 ' + index);
+  const source = ['- 开头列表', '    - 子列表', '# 第一章', '- ' + longLabel, '# 第二章', '### 小节', ...deep, ...wide].join('\n');
+  fs.writeFileSync(path.join(workspace, '灵活大纲.md'), source);
+  success(['import', '灵活大纲.md', '-o', '完整脑图.mm']);
+  const imported = readMap(path.join(workspace, '完整脑图.mm')).nodes;
+  assert.deepEqual(imported.slice(0, 7).map(({text, depth}) => [text, depth]), [
+    ['导入脑图', 0], ['开头列表', 1], ['子列表', 2], ['第一章', 1], [longLabel, 2], ['第二章', 1], ['小节', 2],
+  ]);
+  assert.equal(imported.length, 627);
+  assert.equal(imported[116].depth, 112);
+  assert.equal(imported[117].depth, 3);
+  assert.equal(imported.at(-1).text, '条目 509');
+  success(['export', '完整脑图.mm', '-o', '完整大纲.md']);
+  success(['import', '完整大纲.md', '-o', '往返完整脑图.mm']);
+  const roundTrip = readMap(path.join(workspace, '往返完整脑图.mm')).nodes;
+  assert.deepEqual(roundTrip.map(({id, ...node}) => node), imported.map(({id, ...node}) => node));
+  assert.equal(fs.readFileSync(path.join(workspace, '灵活大纲.md'), 'utf8'), source);
 });
 
 test('CLI rejects malformed invocation and interactive startup without a terminal', t => {

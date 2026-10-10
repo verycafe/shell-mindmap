@@ -62,7 +62,8 @@ export function layoutMap(nodes: MindmapNode[], options: {nodeWidth: number; mod
   for (const branch of visible) {
     const suffix = branch.source.folded && branch.children.length ? ' [+]' : '';
     const lines = wrapText(branch.source.text + suffix, options.nodeWidth);
-    const width = Math.max(1, ...lines.map(displayWidth));
+    let width = 1;
+    for (const line of lines) width = Math.max(width, displayWidth(line));
     Object.assign(branch.placed, {lines, width, height: lines.length});
     if (!branch.parent) rootWidth = Math.max(rootWidth, width);
     const levels = branch.side === 1 ? widths.right : widths.left;
@@ -143,8 +144,13 @@ export function layoutMap(nodes: MindmapNode[], options: {nodeWidth: number; mod
     const parentY = middle(parent);
     mark(start, parentY, right ? W : E);
     segment(start, parentY, trunk, parentY);
-    const centers = [parentY, ...children.map(child => middle(child.placed))];
-    segment(trunk, Math.min(...centers), trunk, Math.max(...centers));
+    let top = parentY, bottom = parentY;
+    for (const child of children) {
+      const center = middle(child.placed);
+      top = Math.min(top, center);
+      bottom = Math.max(bottom, center);
+    }
+    segment(trunk, top, trunk, bottom);
     for (const child of children) {
       const childY = middle(child.placed);
       const end = right ? child.placed.x - 1 : child.placed.x + child.placed.width;
@@ -159,11 +165,17 @@ export function layoutMap(nodes: MindmapNode[], options: {nodeWidth: number; mod
     [N | E | S | W]: '┼',
   };
   const placed = visible.map(branch => branch.placed);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const node of placed) {
+    minX = Math.min(minX, node.x);
+    maxX = Math.max(maxX, node.x + node.width);
+    minY = Math.min(minY, node.y);
+    maxY = Math.max(maxY, node.y + node.height);
+  }
   return {
     nodes: placed,
     edges: Array.from(masks.values(), edge => ({x: edge.x, y: edge.y, char: chars[edge.mask] ?? '─'})),
-    minX: Math.min(...placed.map(node => node.x)), maxX: Math.max(...placed.map(node => node.x + node.width)),
-    minY: Math.min(...placed.map(node => node.y)), maxY: Math.max(...placed.map(node => node.y + node.height)),
+    minX, maxX, minY, maxY,
   };
 }
 
@@ -181,9 +193,9 @@ export function renderViewport(layout: Layout, view: {x: number; y: number; widt
   for (const node of layout.nodes) {
     if (node.x >= x + width || node.x + node.width <= x || node.y >= y + height || node.y + node.height <= y) continue;
     const tone: Tone = node.id === view.selected ? 'selected' : 'node';
-    for (let offset = 0; offset < node.height; offset++) {
+    const firstLine = Math.max(0, y - node.y), lastLine = Math.min(node.height, y + height - node.y);
+    for (let offset = firstLine; offset < lastLine; offset++) {
       const rowIndex = node.y + offset - y;
-      if (rowIndex < 0 || rowIndex >= height) continue;
       const row = rows[rowIndex]!;
       for (let column = Math.max(node.x - x, 0); column < Math.min(node.x + node.width - x, width); column++) row[column] = {text: ' ', tone};
       let column = node.x - x;

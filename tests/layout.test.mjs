@@ -94,6 +94,43 @@ test('500 nodes and a 500-level chain lay out without recursion or collisions', 
   assertNoOverlap(chain);
 });
 
+test('large sibling sets and deep chains preserve placement, selection and folds', () => {
+  const siblings = [node('root', 0), ...Array.from({length: 10_000}, (_, index) => node(`n${index}`, 1))];
+  for (const mode of ['right', 'bilateral']) {
+    const layout = layoutMap(siblings, {nodeWidth: 12, mode});
+    assert.equal(layout.nodes.length, siblings.length);
+    assertNoOverlap(layout);
+    const selected = 'n9999';
+    const view = followSelection(layout, selected, {x: 0, y: 0}, 40, 10);
+    const rows = renderViewport(layout, {...view, width: 40, height: 10, selected});
+    assert.ok(plain(rows).some(line => line.includes(selected)));
+    assert.ok(plain(rows).every(line => displayWidth(line) === 40));
+  }
+  const source = Array.from({length: 2_000}, (_, index) => node(`d${index}`, index));
+  const chain = layoutMap(source, {nodeWidth: 12, mode: 'right'});
+  assert.equal(chain.nodes.length, source.length);
+  assertNoOverlap(chain);
+  const end = position(chain, 'd1999');
+  const view = followSelection(chain, end.id, {x: 0, y: 0}, 40, 10);
+  assert.ok(plain(renderViewport(chain, {...view, width: 40, height: 10, selected: end.id})).some(line => line.includes(end.id)));
+  const folded = layoutMap(source.map(item => item.id === 'd1' ? {...item, folded: true} : item), {nodeWidth: 12, mode: 'right'});
+  assert.equal(folded.nodes.length, 2);
+  assert.equal(position(folded, 'd1').lines.join(''), 'd1 [+]');
+});
+
+test('very tall nodes have no argument-count limit and render their final lines', () => {
+  const text = `${'a\n'.repeat(140_000)}末尾👩‍💻`;
+  const layout = layoutMap([node('long', 0, text)], {nodeWidth: 12, mode: 'right'});
+  const placed = position(layout, 'long');
+  assert.equal(placed.lines.join('\n'), text);
+  assert.equal(placed.height, 140_001);
+  assert.equal(layout.maxY, placed.height);
+  assert.equal(layout.maxX, displayWidth('末尾👩‍💻'));
+  const rows = renderViewport(layout, {x: 0, y: 139_999, width: 12, height: 3, selected: 'long'});
+  assert.deepEqual(plain(rows), ['a           ', '末尾👩‍💻      ', '            ']);
+  assert.equal(rows[1][0].tone, 'selected');
+});
+
 test('viewport clips wide characters to spaces and produces exact terminal dimensions', () => {
   const layout = {nodes: [{id: 'one', x: 0, y: 0, width: 5, height: 1, lines: ['中A文']}], edges: [], minX: 0, maxX: 5, minY: 0, maxY: 1};
   const view = renderViewport(layout, {x: 1, y: 0, width: 3, height: 2, selected: 'one'});

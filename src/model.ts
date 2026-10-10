@@ -1,19 +1,24 @@
 import {randomUUID} from 'node:crypto';
 import type {MindmapNode, Operation} from './types.js';
 
-const MAX_NODES = 500;
-const MAX_DEPTH = 23;
-const MAX_TEXT = 300;
-
-function validateText(text: string): void {
+export function validateText(text: string): void {
   if (typeof text !== 'string' || !text.trim()) throw new Error('节点文字不能为空');
-  if ([...text].length > MAX_TEXT) throw new Error('节点文字最多 300 个字符');
   if (/\p{Cc}/u.test(text)) throw new Error('节点文字不能包含换行、Tab 或控制字符');
 }
 
+function validateDepth(depth: number, previousDepth?: number): void {
+  if (!Number.isSafeInteger(depth) || depth < 0) throw new Error('层级必须是非负安全整数');
+  if (previousDepth === undefined) {
+    if (depth !== 0) throw new Error('首个节点必须是第 0 层根节点');
+  } else {
+    if (depth === 0) throw new Error('脑图只能有一个根节点');
+    if (depth > previousDepth + 1) throw new Error('节点层级不能跳过父节点');
+  }
+}
+
 export function validateNodes(nodes: MindmapNode[]): void {
-  if (!Array.isArray(nodes) || nodes.length < 1 || nodes.length > MAX_NODES) {
-    throw new Error('脑图必须包含 1–500 个节点');
+  if (!Array.isArray(nodes) || nodes.length < 1) {
+    throw new Error('脑图必须包含至少一个节点');
   }
   const ids = new Set<string>();
   let previousDepth = 0;
@@ -22,9 +27,10 @@ export function validateNodes(nodes: MindmapNode[]): void {
       throw new Error(`第 ${index + 1} 个节点的标识无效或重复`);
     }
     ids.add(node.id);
-    if (!Number.isInteger(node.depth) || node.depth < 0 || node.depth > MAX_DEPTH ||
-        (index === 0 ? node.depth !== 0 : node.depth === 0 || node.depth > previousDepth + 1)) {
-      throw new Error(`第 ${index + 1} 个节点的层级无效；最多 24 层且仅允许一个根节点`);
+    try {
+      validateDepth(node.depth, index === 0 ? undefined : previousDepth);
+    } catch (error) {
+      throw new Error(`第 ${index + 1} 个节点：${(error as Error).message}`);
     }
     if (typeof node.folded !== 'boolean') throw new Error(`第 ${index + 1} 个节点的折叠状态无效`);
     validateText(node.text);
@@ -43,16 +49,12 @@ export function parseMM(text: string): MindmapNode[] {
   if (lines.at(-1) === '') lines.pop();
   const nodes: MindmapNode[] = [];
   for (let index = 1; index < lines.length; index++) {
-    const fields = /^(\d{1,2})\t([01])\t(.*)$/u.exec(lines[index]!);
+    const fields = /^(\d+)\t([01])\t(.*)$/u.exec(lines[index]!);
     if (!fields) throw new Error(`文件第 ${index + 1} 行：需要有效的层级、折叠状态和节点文字`);
     const node = {id: randomUUID(), depth: Number(fields[1]), folded: fields[2] === '1', text: fields[3]!};
     try {
       validateText(node.text);
-      if (nodes.length >= MAX_NODES) throw new Error('脑图最多 500 个节点');
-      const previous = nodes.at(-1);
-      if (node.depth > MAX_DEPTH || (!previous ? node.depth !== 0 : node.depth === 0 || node.depth > previous.depth + 1)) {
-        throw new Error('层级无效；最多 24 层且仅允许一个根节点');
-      }
+      validateDepth(node.depth, nodes.at(-1)?.depth);
     } catch (error) {
       throw new Error(`文件第 ${index + 1} 行：${(error as Error).message}`);
     }
@@ -167,8 +169,8 @@ export function moveBranch(nodes: MindmapNode[], id: string, targetParentId: str
   next.splice(sourceIndex, end - sourceIndex);
   const newTarget = indexOf(next, targetParentId);
   next[newTarget]!.folded = false;
-  next.splice(branchEnd(next, newTarget), 0, ...branch);
-  return result(next, id);
+  const insertAt = branchEnd(next, newTarget);
+  return result(next.slice(0, insertAt).concat(branch, next.slice(insertAt)), id);
 }
 
 export function reorderBranch(nodes: MindmapNode[], id: string, delta: -1 | 1): Operation {
@@ -203,8 +205,8 @@ export function pasteBranch(nodes: MindmapNode[], targetId: string, clipboard: M
   const branch = clipboard.map(node => ({...node, id: randomUUID(), depth: node.depth + nodes[index]!.depth + 1}));
   const next = clone(nodes);
   next[index]!.folded = false;
-  next.splice(branchEnd(nodes, index), 0, ...branch);
-  return result(next, branch[0]!.id);
+  const insertAt = branchEnd(nodes, index);
+  return result(next.slice(0, insertAt).concat(branch, next.slice(insertAt)), branch[0]!.id);
 }
 
 export function revealNode(nodes: MindmapNode[], id: string): MindmapNode[] {

@@ -6,7 +6,7 @@ import {createMap} from './model.js';
 import {importMarkdown,exportMarkdown} from './markdown.js';
 import {configEntries,configPath,defaultConfig,loadConfig,resetConfig,saveConfig,setConfig} from './config.js';
 import {ensureApplicationDirectory,expandPath,listMaps,readMap,saveMap,writeTextAtomic,resolveSaveDirectory} from './storage.js';
-import {actions} from './actions.js';
+import {actions,actionShortcuts} from './actions.js';
 
 const HELP=`Shell Mindmap · 终端脑图
 
@@ -22,6 +22,7 @@ SMM keys [list|bind ACTION KEY|reset [ACTION]]
 SMM help / --help / --version
 
 Tab 子节点 · Enter 同级 · e 编辑 · 方向键选择 · 空格折叠
+Delete / Backspace / d 删除当前分支（含后代），u 撤销；根节点不可删除
 s 保存 · S 另存为 · u/r 撤销/重做 · ?/？/F1 帮助 · / 命令
 f / Ctrl+f 搜索 · c/p 复制/粘贴分支 · m 移动 · O 文件浏览 · , 设置
 Shift＋方向键或 H/J/K/L 平移视口 · g/Home 回根并居中
@@ -41,7 +42,8 @@ Shift＋方向键或 H/J/K/L 平移视口 · g/Home 回根并居中
 设置 save-dir 可指定固定保存目录；SMM config reset save-dir 恢复启动目录。
 相对输入路径基于启动目录；已打开文件的普通保存写回原路径。
 O 打开文件浏览器，从当前文件所在目录或上次浏览位置继续。
-Markdown：一个 # 根标题与嵌套无序列表，每层缩进 2 空格。
+脑图节点数量、层级和文字长度不设固定上限。
+Markdown：标题与嵌套列表，自动识别缩进；多根或无根时补总节点。
 转换不会覆盖已有文件。文件名与子命令重名时使用 SMM -- 文件名。
 需要 Node.js 22+ 和支持 ANSI/UTF-8 的终端。`;
 
@@ -63,7 +65,7 @@ export async function main(args:string[]):Promise<void> {
   }
   if(args[0]==='keys'){
     const config=loadConfig(),op=args[1]||'list';
-    if(op==='list'){usage(args.length<=2,'用法：SMM keys list');for(const [id,label] of actions)console.log(`${id.padEnd(16)} ${(config.keys[id]||'未绑定').padEnd(10)} ${label}`);console.log('固定入口：F1 / 中文？ 帮助；/、:、中文： 命令菜单。');return;}
+    if(op==='list'){usage(args.length<=2,'用法：SMM keys list');for(const [id,label] of actions)console.log(`${id.padEnd(16)} ${(actionShortcuts(id,config).join(' / ')||'未绑定').padEnd(10)} ${label}`);console.log('固定入口：F1 / 中文？ 帮助；/、:、中文： 命令菜单。');return;}
     if(op==='bind'){usage(args.length===4,'用法：SMM keys bind ACTION KEY');saveConfig(setConfig(config,'key.'+args[2],args[3]!));console.log('快捷键已保存。');return;}
     if(op==='reset'){usage(args.length===2||args.length===3,'用法：SMM keys reset [ACTION]');saveConfig(resetConfig(config,args[2]?'key.'+args[2]:'keys'));console.log('已恢复默认快捷键。');return;}
     throw new Error('未知快捷键命令；使用 SMM help 查看说明。');

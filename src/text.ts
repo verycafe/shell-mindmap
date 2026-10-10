@@ -18,7 +18,7 @@ export function clipText(text: string, start: number, width: number): string {
   if (end === from) return '';
   let column = 0;
   let result = '';
-  for (const glyph of graphemes(stripVTControlCharacters(text))) {
+  for (const {segment: glyph} of segmenter.segment(stripVTControlCharacters(text))) {
     const size = displayWidth(glyph);
     if (size === 0) continue;
     if (column >= end) break;
@@ -40,12 +40,15 @@ export function wrapText(text: string, maxWidth: number): string[] {
     .replace(/[\u0000-\u0009\u000B-\u001F\u007F-\u009F]/gu, '');
   for (const paragraph of paragraphs.split('\n')) {
     const tokens: string[] = [];
-    for (const glyph of graphemes(paragraph)) {
-      if (/^[A-Za-z0-9_]$/u.test(glyph) && /^[A-Za-z0-9_]+$/u.test(tokens.at(-1) ?? '')) {
+    let previousWord = false;
+    for (const {segment: glyph} of segmenter.segment(paragraph)) {
+      const word = /^[A-Za-z0-9_]$/u.test(glyph);
+      if (word && previousWord) {
         tokens[tokens.length - 1] += glyph;
       } else {
         tokens.push(glyph);
       }
+      previousWord = word;
     }
     let line = '';
     let columns = 0;
@@ -61,7 +64,7 @@ export function wrapText(text: string, maxWidth: number): string[] {
     };
     for (const token of tokens) {
       if (displayWidth(token) <= limit) append(token);
-      else for (const glyph of graphemes(token)) append(glyph);
+      else for (const {segment: glyph} of segmenter.segment(token)) append(glyph);
     }
     lines.push(line);
   }

@@ -130,6 +130,20 @@ test('failed recovery update leaves last good snapshot intact', () => {
   assert.equal(fs.readFileSync(file, 'utf8'), original);
 });
 
+test('recovery snapshots retain maps beyond the former node, depth and text limits', () => {
+  const text = '中文 English العربية हिन्दी e\u0301 🧠'.repeat(100);
+  const large = Array.from({length: 720}, (_, index) => ({
+    id: `node-${index}`, text: `${index} ${text} 完整末尾`, depth: index <= 130 ? index : 1, folded: index % 2 === 0,
+  }));
+  try {
+    writeRecovery({sessionId: 'large_snapshot', nodes: large});
+    assert.deepEqual(listRecoveries().find(record => record.sessionId === 'large_snapshot').nodes, large);
+    large.at(-1).text += ' updated';
+    writeRecovery({sessionId: 'large_snapshot', nodes: large});
+    assert.deepEqual(listRecoveries().find(record => record.sessionId === 'large_snapshot').nodes, large);
+  } finally {removeRecovery('large_snapshot');}
+});
+
 test('discard removes only the selected session and is idempotent', () => {
   removeRecovery('session_one');
   removeRecovery('session_one');

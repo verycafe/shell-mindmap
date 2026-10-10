@@ -29,7 +29,7 @@ interface InputFieldProps {
 export function InputField({kind,title,value,width,viewport,message}:InputFieldProps){
   const nodeInput=['edit','child','sibling'].includes(kind);
   const accent=message?'yellow':kind==='command'?'magenta':kind==='search'?'green':'cyan';
-  const count=nodeInput?`${Array.from(value).length}/300`:'';
+  const count=nodeInput?`${Array.from(value).length} 字`:'';
   const titleWidth=Math.max(1,width-(count?displayWidth(count)+1:0));
   const shown=clipText(value?viewport.text:placeholders[kind],0,viewport.textWidth);
   const hint=kind==='command'?'↑↓ 选择 · Tab 补全 · Enter 确认 · Esc 返回'

@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {validateNodes} from './model.js';
+import {validateNodes, validateText} from './model.js';
 import type {MindmapNode} from './types.js';
 
 function isPunctuation(character: string): boolean {
@@ -54,30 +54,48 @@ export function exportMarkdown(nodes: MindmapNode[]): string {
 export function importMarkdown(text: string): MindmapNode[] {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const nodes: MindmapNode[] = [];
+  const headings: {level: number; depth: number}[] = [];
+  const listIndents: number[] = [];
+  let firstIsHeading = false;
+  let roots = 0;
   for (const [index, line] of lines.entries()) {
-    if (line === '' || /^ *$/.test(line)) continue;
+    if (/^[ \t]*$/.test(line)) continue;
     try {
-      let depth = 0;
-      let label = '';
-      if (nodes.length === 0) {
-        if (!line.startsWith('# ')) throw new Error('脑图必须以一个 # 根节点标题开始');
-        label = line.slice(2);
+      let depth: number;
+      let label: string;
+      const heading = /^ {0,3}(#{1,6})[ \t](.*)$/u.exec(line);
+      if (heading) {
+        const level = heading[1]!.length;
+        while (headings.length && headings.at(-1)!.level >= level) headings.pop();
+        depth = (headings.at(-1)?.depth ?? -1) + 1;
+        headings.push({level, depth});
+        listIndents.length = 0;
+        label = heading[2]!;
+        if (nodes.length === 0) firstIsHeading = true;
       } else {
-        if (line.startsWith('# ')) throw new Error('只能有一个 # 根节点标题');
-        const item = /^( *)([-+*]) (.*)$/u.exec(line);
-        if (!item) throw new Error('仅支持单行无序列表节点；不支持正文、其他标题、表格或代码块');
-        if (item[1]!.length % 2 !== 0) throw new Error('子节点必须按每级 2 个空格缩进');
-        depth = item[1]!.length / 2 + 1;
+        const item = /^([ \t]*)([-+*])[ \t](.*)$/u.exec(line);
+        if (!item) throw new Error('仅支持 #–###### 标题和单行无序列表；不支持正文、有序列表、表格或代码块');
+        let indent = 0;
+        for (const character of item[1]!) indent += character === '\t' ? 4 - indent % 4 : 1;
+        // Indentation is relative: each increase adds one parent, regardless of its width.
+        while (listIndents.length && listIndents.at(-1)! >= indent) listIndents.pop();
+        depth = (headings.at(-1)?.depth ?? -1) + 1 + listIndents.length;
+        listIndents.push(indent);
         label = item[3]!;
       }
       const node = {id: randomUUID(), text: decodeLabel(label), depth, folded: false};
-      const candidate = [...nodes, node];
-      validateNodes(candidate);
+      validateText(node.text);
       nodes.push(node);
+      if (depth === 0) roots++;
     } catch (error) {
       throw new Error(`Markdown 第 ${index + 1} 行：${(error as Error).message}`);
     }
   }
-  if (!nodes.length) throw new Error('Markdown 第 1 行：缺少 # 根节点标题');
+  if (!nodes.length) throw new Error('Markdown 第 1 行：缺少标题或列表节点');
+  if (!firstIsHeading || roots > 1) {
+    for (const node of nodes) node.depth++;
+    nodes.unshift({id: randomUUID(), text: '导入脑图', depth: 0, folded: false});
+  }
+  validateNodes(nodes);
   return nodes;
 }

@@ -69,6 +69,19 @@ test('maps round trip with Chinese spaces, folding and atomic exclusive creation
   assert.ok(Number.isFinite(Date.parse(listMaps(applicationDirectory())[0].modified)));
 });
 
+test('saving and reopening preserves large maps, deep branches and long multilingual text', () => {
+  const text = '中文 English العربية हिन्दी e\u0301 🧠'.repeat(100);
+  const large = Array.from({length: 720}, (_, index) => ({
+    id: `node-${index}`, text: `${index} ${text} 完整末尾`, depth: index <= 130 ? index : 1, folded: index % 2 === 0,
+  }));
+  const file = path.join(fixture, 'large.mm');
+  const saved = saveMap(file, large);
+  assert.deepEqual(content(readMap(file).nodes), content(large));
+  large.at(-1).text += ' updated';
+  saveMap(file, large, {expectedFingerprint: saved.fingerprint});
+  assert.deepEqual(content(readMap(file).nodes), content(large));
+});
+
 test('external changes and deletion reject stale saves while explicit override succeeds', () => {
   const file = path.join(fixture, 'external.mm');
   const saved = saveMap(file, nodes);

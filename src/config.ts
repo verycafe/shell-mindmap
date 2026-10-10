@@ -35,7 +35,7 @@ function bindingValue(action: string, value: string, allowLegacySlash = false): 
   if (value === '' || (allowLegacySlash && value === '/')) return value;
   if (['/', ':', '：', '？'].includes(value)) throw new Error('/、:、中文：和中文？是固定入口，不能重新分配');
   if (value === 'F1' && action !== 'help') throw new Error('F1 是固定帮助入口，只能用于 key.help');
-  const named = ['Tab', 'Enter', 'Left', 'Right', 'Up', 'Down', 'Space', 'Delete', 'PageUp', 'PageDown', 'F1',
+  const named = ['Tab', 'Enter', 'Left', 'Right', 'Up', 'Down', 'Space', 'Delete', 'Backspace', 'PageUp', 'PageDown', 'F1',
     'Shift+Left', 'Shift+Right', 'Shift+Up', 'Shift+Down', 'Ctrl+f'];
   if (!named.includes(value) && (Array.from(value).length !== 1 || /[\s\p{C}]/u.test(value))) {
     throw new Error('key.' + action + ' 需要单个可见字符或命名按键；可用空值取消主键');

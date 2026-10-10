@@ -41,28 +41,51 @@ test('native format rejects malformed fields, tree shapes and terminal controls'
   for (const text of invalid) assert.throws(() => parseMM(text), undefined, text);
 });
 
-test('node limits count Unicode code points and permit the exact documented boundaries', () => {
-  assert.equal([...createMap('🚀'.repeat(300))[0].text].length, 300);
-  assert.throws(() => createMap('🚀'.repeat(301)), /300/);
+test('node text, count and depth round trip beyond the former size limits', () => {
+  const text = '中文 English العربية हिन्दी e\u0301 🚀'.repeat(80);
+  assert.equal(createMap(text)[0].text, text);
+  const deep = Array.from({length: 130}, (_, depth) => ({id: String(depth), text: `${depth} ${text}`, depth, folded: depth % 2 === 0}));
+  const child = addChild(frozen(deep), '129', text);
+  assert.equal(child.nodes.at(-1).depth, 130);
+  assert.deepEqual(content(parseMM(serializeMM(child.nodes))), content(child.nodes));
+  const wide = Array.from({length: 700}, (_, index) => ({id: String(index), text, depth: index ? 1 : 0, folded: false}));
+  const added = addChild(frozen(wide), '0', text);
+  const sibling = addSibling(frozen(added.nodes), added.selected, text);
+  const edited = editNode(frozen(sibling.nodes), sibling.selected, text + ' 完整结尾');
+  const pasted = pasteBranch(frozen(edited.nodes), '0', createMap(text));
+  assert.equal(pasted.nodes.length, 703);
+  assert.equal(pasted.nodes.at(-2).text, text + ' 完整结尾');
+  assert.deepEqual(content(parseMM(serializeMM(pasted.nodes))), content(pasted.nodes));
+});
+
+test('node text still rejects blank values and terminal controls', () => {
   assert.throws(() => createMap(' \u3000 '), /不能为空/);
   for (const text of ['a\nb', 'a\tb', 'a\x00b']) assert.throws(() => createMap(text), /控制字符/);
-  const deep = Array.from({length: 24}, (_, depth) => ({id: String(depth), text: '节点', depth, folded: false}));
-  validateNodes(deep);
-  assert.throws(() => addChild(deep, '23', '超深'), /24/);
-  const wide = Array.from({length: 500}, (_, index) => ({id: String(index), text: '节点', depth: index ? 1 : 0, folded: false}));
-  validateNodes(wide);
-  assert.throws(() => addChild(wide, '0', '超量'), /500/);
-  assert.throws(() => pasteBranch(wide, '0', createMap('复制')), /500/);
 });
 
 test('validation rejects duplicate IDs, non-boolean folds and invalid numeric depths', () => {
   assert.throws(() => validateNodes([{id: '', text: 'x', depth: 0, folded: false}]), /标识/);
-  for (const patch of [{depth: 0.5}, {depth: -1}, {depth: NaN}, {folded: 1}]) {
+  for (const patch of [{depth: 0.5}, {depth: -1}, {depth: NaN}, {depth: Infinity}, {depth: Number.MAX_SAFE_INTEGER + 1}, {folded: 1}]) {
     assert.throws(() => validateNodes([{...createMap()[0], ...patch}]));
   }
   const nodes = fixture();
   nodes[1].id = nodes[0].id;
   assert.throws(() => validateNodes(nodes), /重复/);
+});
+
+test('depth validation reports numeric errors, missing roots, multiple roots and skipped parents separately', () => {
+  const root = {id: 'root', text: 'root', depth: 0, folded: false};
+  const invalid = [
+    [{...root, depth: Number.MAX_SAFE_INTEGER + 1}, /非负安全整数/],
+    [{...root, depth: 1}, /首个节点必须是第 0 层根节点/],
+  ];
+  for (const [node, error] of invalid) assert.throws(() => validateNodes([node]), error);
+  for (const [depth, error] of [[0, /只能有一个根节点/], [2, /不能跳过父节点/]]) {
+    assert.throws(() => validateNodes([root, {...root, id: 'child', depth}]), error);
+    assert.throws(() => parseMM(`MM-ZSH-1\n0\t0\troot\n${depth}\t0\tchild\n`), error);
+  }
+  assert.throws(() => parseMM('MM-ZSH-1\n1\t0\troot\n'), /文件第 2 行：首个节点/);
+  assert.throws(() => parseMM('MM-ZSH-1\n0\t0\troot\n9007199254740992\t0\tchild\n'), /文件第 3 行：层级必须是非负安全整数/);
 });
 
 test('child and sibling insertion respect complete subtrees and reveal their parent', () => {
@@ -155,17 +178,57 @@ test('clipboard is detached, rebased and reusable with new IDs for every paste',
   assert.equal(first.selected, copied[0].id);
   assert.equal(second.selected, copied[3].id);
   assert.deepEqual(ids(clipboard), ['a', 'a1', 'a2']);
-  assert.throws(() => pasteBranch(nodes, 'b', []), /1–500/);
+  assert.throws(() => pasteBranch(nodes, 'b', []), /至少一个节点/);
 });
 
-test('rejected deep move and paste preserve both input and clipboard', () => {
-  const nodes = Array.from({length: 24}, (_, depth) => ({id: String(depth), text: '节点', depth, folded: false}));
+test('deep moves and pastes succeed while preserving their input snapshots and clipboard', () => {
+  const nodes = Array.from({length: 130}, (_, depth) => ({id: String(depth), text: '节点', depth, folded: false}));
   nodes.push({id: 'sibling', text: '另一分支', depth: 1, folded: false});
   const before = serializeMM(nodes);
-  assert.throws(() => moveBranch(frozen(nodes), 'sibling', '23'), /24/);
+  const moved = moveBranch(frozen(nodes), 'sibling', '129');
+  assert.equal(moved.nodes.at(-1).depth, 130);
+  assert.equal(moved.nodes.at(-1).id, 'sibling');
   const clipboard = frozen(createMap('待粘贴'));
-  assert.throws(() => pasteBranch(frozen(nodes), '23', clipboard), /24/);
+  const pasted = pasteBranch(frozen(nodes), '129', clipboard);
+  assert.equal(pasted.nodes.at(-2).depth, 130);
+  assert.equal(pasted.nodes.at(-2).text, '待粘贴');
   assert.equal(serializeMM(nodes), before);
+  assert.equal(clipboard[0].depth, 0);
+});
+
+test('invalid branch operations preserve both input model and clipboard', () => {
+  const nodes = frozen(fixture());
+  const before = serializeMM(nodes);
+  const clipboard = frozen([{id: 'invalid', text: '未丢失', depth: 1, folded: false}]);
+  assert.throws(() => pasteBranch(nodes, 'b', clipboard), /首个节点/);
+  assert.throws(() => moveBranch(nodes, 'a', 'a1'), /自身或其子节点/);
+  assert.throws(() => editNode(nodes, 'a', 'bad\ntext'), /控制字符/);
+  assert.equal(serializeMM(nodes), before);
+  assert.deepEqual(clipboard, [{id: 'invalid', text: '未丢失', depth: 1, folded: false}]);
+});
+
+test('large branches can be moved and pasted without function argument count limits', () => {
+  const descendantCount = 150_000;
+  const source = [
+    {id: 'root', text: 'root', depth: 0, folded: false},
+    {id: 'branch', text: 'branch', depth: 1, folded: true},
+    ...Array.from({length: descendantCount}, (_, index) => ({id: `leaf-${index}`, text: `leaf ${index}`, depth: 2, folded: false})),
+    {id: 'target', text: 'target', depth: 1, folded: true},
+  ];
+  const moved = moveBranch(source, 'branch', 'target');
+  assert.equal(moved.nodes.length, source.length);
+  assert.deepEqual(ids(moved.nodes.slice(0, 3)), ['root', 'target', 'branch']);
+  assert.deepEqual(moved.nodes.at(-1), {id: `leaf-${descendantCount - 1}`, text: `leaf ${descendantCount - 1}`, depth: 3, folded: false});
+  assert.equal(moved.nodes[1].folded, false);
+  assert.equal(source[1].depth, 1);
+  assert.equal(source.at(-1).folded, true);
+  const clipboard = copyBranch(source, 'branch');
+  const destination = createMap('destination');
+  const pasted = pasteBranch(destination, destination[0].id, clipboard);
+  assert.equal(pasted.nodes.length, descendantCount + 2);
+  assert.deepEqual(content(pasted.nodes.slice(1)), content(source.slice(1, -1)));
+  assert.equal(new Set(ids(pasted.nodes)).size, pasted.nodes.length);
+  assert.notEqual(pasted.nodes[1].id, clipboard[0].id);
   assert.equal(clipboard[0].depth, 0);
 });
 
@@ -185,7 +248,7 @@ test('many successive branch operations retain valid serializable trees and immu
       nodes = reorderBranch(snapshot, source.id, random(2) ? 1 : -1).nodes;
     } else {
       try { nodes = moveBranch(snapshot, source.id, nodes[random(nodes.length)].id).nodes; }
-      catch (error) { assert.match(error.message, /自身或其子节点|24/); }
+      catch (error) { assert.match(error.message, /自身或其子节点/); }
     }
     assert.equal(serializeMM(snapshot), before);
     validateNodes(nodes);

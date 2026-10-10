@@ -10,7 +10,7 @@ import {commit,initialDocument,travel,type DocumentState} from './history.js';
 import {layoutMap,renderViewport,followSelection} from './layout.js';
 import {clipText,displayWidth,graphemes,editBuffer,sanitizePaste,wrapText} from './text.js';
 import {InputField,inputViewport,type InputKind} from './input-field.js';
-import {actions,resolveAction,helpLines,parseCommand,commandSuggestions} from './actions.js';
+import {actions,resolveAction,actionShortcuts,displayKey,helpLines,parseCommand,commandSuggestions} from './actions.js';
 import {keyName,F1Observer} from './input.js';
 import {configEntries,configPath,resetConfig,saveConfig,setConfig} from './config.js';
 import {expandPath,readMap,saveMap,suggestFilename,writeTextAtomic,resolveSaveDirectory} from './storage.js';
@@ -20,7 +20,7 @@ import {listRecoveries,writeRecovery,removeRecovery} from './recovery.js';
 
 type Panel='map'|'input'|'help'|'settings'|'library'|'move'|'recoveries'|'confirm';
 interface Dialog {kind:InputKind;value:string;cursor:number;prompt:string;after?:()=>void;returnTo?:Dialog}
-interface Item {label:string;description?:string;value:string}
+interface Item {label:string;description?:string;value:string;depth?:number}
 interface Confirmation {message:string;choices:string;accept:(key:string)=>void}
 interface State {
   doc:DocumentState;config:AppConfig;file?:string;fingerprint?:string;
@@ -30,6 +30,11 @@ interface State {
   items:Item[];confirmation?:Confirmation;previous?:{panel:Panel;dialog?:Dialog;index:number;scroll:number};widthOverride?:number;
 }
 export interface AppProps {nodes:MindmapNode[];config:AppConfig;file?:string;fingerprint?:string;fresh?:boolean;widthOverride?:number;browseDirectory?:string;onState?:(state:State)=>void}
+
+function nodeLabel(text:string,depth:number,width:number){
+  const indent=Math.min(depth,Math.max(0,Math.floor((width-24)/2)));
+  return '  '.repeat(indent)+(indent<depth?`… ${depth+1}层 `:'')+text;
+}
 
 export function App(props:AppProps) {
   const workspace=useRef(process.cwd()).current;
@@ -148,7 +153,7 @@ export function App(props:AppProps) {
     const s=current.current,id=s.doc.selected,index=s.doc.nodes.findIndex(n=>n.id===id),depth=selected().depth;
     if(depth===0)throw new Error('根节点不能移动。');
     let end=index+1;while(end<s.doc.nodes.length&&s.doc.nodes[end]!.depth>depth)end++;
-    const items=s.doc.nodes.filter((_,i)=>i<index||i>=end).map(n=>({label:'  '.repeat(n.depth)+n.text,value:n.id}));
+    const items=s.doc.nodes.filter((_,i)=>i<index||i>=end).map(n=>({label:n.text,depth:n.depth,value:n.id}));
     update(x=>({...x,panel:'move',items,index:0,message:'选择新的父节点；移动后可撤销。'}));
   }
   function changeConfig(key:string,value?:string,reset=false){
@@ -260,8 +265,6 @@ export function App(props:AppProps) {
   function insert(text:string){update(s=>{
     if(s.panel!=='input'||!s.dialog)return {...s,message:'请先编辑节点再粘贴，浏览模式不会执行粘贴中的快捷键。'};
     const d=s.dialog,next=editBuffer(d,'insert',sanitizePaste(text));
-    if(['edit','child','sibling'].includes(d.kind)&&Array.from(next.value).length>300)return {...s,message:'每个节点最多 300 个字符；此次输入未插入。'};
-    if(next.value.length>8192)return {...s,message:'输入过长。'};
     return {...s,dialog:{...d,...next},browser:d.kind==='filter'&&s.browser?filterBrowser(s.browser,next.value):s.browser,index:0,message:''};
   });}
   function browseKey(name:string){
@@ -428,28 +431,31 @@ export function App(props:AppProps) {
     footer=width>=78?'n 新建 · f 筛选 · o 路径 · . 隐藏 · Ctrl-R 刷新 · / 命令 · Esc 返回 · q 退出':'n 新建 · f 筛选 · o 路径 · / 命令 · q 退出';
   }else if(['move','recoveries'].includes(state.panel)){
     const start=Math.max(0,state.index-height+1);
-    body=state.items.slice(start,start+height).map((x,i)=>textLine(`${start+i===state.index?'›':' '} ${x.label}${x.description?'  · '+x.description:''}`,start+i===state.index?'cyan':undefined));
+    body=state.items.slice(start,start+height).map((x,i)=>textLine(`${start+i===state.index?'›':' '} ${x.depth===undefined?x.label:nodeLabel(x.label,x.depth,width-2)}${x.description?'  · '+x.description:''}`,start+i===state.index?'cyan':undefined));
     prompt=state.panel==='move'?'移动分支 · 选择新的父节点':'恢复未保存的脑图';footer='↑↓ 选择 · Enter 确认 · Esc 返回';
   }else if(state.panel==='confirm'){
     body=wrapText(state.confirmation?.message||'',width).map(line=>textLine(line,'yellow'));prompt=state.confirmation?.choices||'';
   }else{
     body=renderViewport(layout,{...view,width,height,selected:state.doc.selected}).map(row=><Text>{row.map((span,i)=><Text key={i} color={span.tone==='edge'?'gray':span.tone==='selected'?'black':'cyan'} backgroundColor={span.tone==='selected'?'cyan':undefined}>{span.text}</Text>)}</Text>);
-    prompt=`${state.config.keys.child} 子节点 · ${state.config.keys.sibling} 同级 · ${state.config.keys.edit} 编辑 · ${state.config.keys.help} 帮助 · / 命令`;
-    footer=`${state.config.keys.save} 保存 · ${state.config.keys.search||'/search'} 搜索 · ${state.config.keys.library||'/open'} 文件浏览 · ${state.config.keys.quit} 退出`;
+    const foldKey=displayKey(actionShortcuts('fold',state.config)[0]||'/fold');
+    const deleteKeys=actionShortcuts('delete',state.config),deleteKey=deleteKeys.includes('Delete')?'Delete':displayKey(deleteKeys[0]||'/delete');
+    prompt=`${state.config.keys.child} 子节点 · ${state.config.keys.sibling} 同级 · ${foldKey} 折叠/展开 · ${state.config.keys.edit} 编辑 · ${state.config.keys.help} 帮助 · / 命令`;
+    footer=`${deleteKey} 删除 · ${state.config.keys.save} 保存 · ${state.config.keys.search||'/search'} 搜索 · ${state.config.keys.library||'/open'} 文件浏览 · ${state.config.keys.quit} 退出`;
   }
   const editor=inputDialog?inputViewport(inputDialog.value,inputDialog.cursor,width):undefined;
   if(inputDialog){
     const d=inputDialog;
     if(d.kind==='search'){
       const matches=model.searchNodes(state.doc.nodes,d.value),start=Math.max(0,state.index-height+2);
-      body=[textLine(`${matches.length} 个结果 · ↑↓ 选择 / Enter 定位`),...matches.slice(start,start+height-1).map((n,i)=>textLine(`${start+i===state.index?'›':' '} ${'  '.repeat(n.depth)}${n.text}`,start+i===state.index?'cyan':undefined))];
+      body=[textLine(`${matches.length} 个结果 · ↑↓ 选择 / Enter 定位`),...matches.slice(start,start+height-1).map((n,i)=>textLine(`${start+i===state.index?'›':' '} ${nodeLabel(n.text,n.depth,width-2)}`,start+i===state.index?'cyan':undefined))];
     }else if(d.kind==='command'){
       const candidates=suggestions(d.value),selectedIndex=Math.min(state.index,Math.max(0,candidates.length-1));
       const capacity=Math.max(1,height-1),start=Math.max(0,selectedIndex-capacity+1);
       body=[textLine(`命令 · ${candidates.length} 个匹配 · ↑↓ 选择`,'magenta')];
       if(candidates.length){
         body.push(...candidates.slice(start,start+capacity).map((candidate,i)=>{
-          const active=start+i===selectedIndex,label=clipText(`${active?'›':' '} /${candidate.label}  ${candidate.description}`,0,width);
+          const shortcut=actionShortcuts(candidate.value,state.config).map(displayKey).join(' / ');
+          const active=start+i===selectedIndex,label=clipText(`${active?'›':' '} /${candidate.label}  ${candidate.description}${shortcut?`  [${shortcut}]`:''}`,0,width);
           return <Text color={active?'black':'magenta'} backgroundColor={active?'magenta':undefined} wrap="truncate">{label}{' '.repeat(Math.max(0,width-displayWidth(label)))}</Text>;
         }));
       }else body.push(textLine(d.value.trimStart().includes(' ')?'参数输入中 · Enter 执行，路径含空格请加引号':'没有匹配的命令 · 修改关键词或 Esc 返回'));

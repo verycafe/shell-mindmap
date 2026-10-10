@@ -1,8 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {actions,parseCommand,resolveAction,commandSuggestions,completeCommand,helpLines,commandDescriptions} from '../dist/actions.js';
+import {actions,parseCommand,resolveAction,actionShortcuts,displayKey,commandSuggestions,completeCommand,helpLines,commandDescriptions} from '../dist/actions.js';
 import {defaultConfig,setConfig} from '../dist/config.js';
-import {F1Observer} from '../dist/input.js';
+import {F1Observer,keyName} from '../dist/input.js';
 import {initialDocument,commit,travel} from '../dist/history.js';
 import {createMap,addChild,toggleFold,editNode} from '../dist/model.js';
 import {sanitizePaste} from '../dist/text.js';
@@ -33,6 +33,25 @@ test('slash is a fixed command-menu entry and Ctrl+f remains a search alias',()=
   const help=helpLines(config).join('\n');
   assert.match(help,/命令菜单.*英文或中文.*↑↓.*Tab.*Enter/);
   assert.match(help,/默认 f \/ Ctrl\+f/);
+});
+test('fold and delete accept named keys and only advertise effective custom bindings',()=>{
+  const config=defaultConfig();
+  assert.equal(resolveAction(keyName(' ',{}),config),'fold');
+  for(const key of [{delete:true},{backspace:true}])assert.equal(resolveAction(keyName('',key),config),'delete');
+  assert.deepEqual(actionShortcuts('fold',config).map(displayKey),['空格']);
+  assert.deepEqual(actionShortcuts('delete',config),['d','Delete','Backspace']);
+  assert.ok(helpLines(config).includes('d / Delete / Backspace  ·  删除分支'));
+  const moved=setConfig(config,'key.fold','z');
+  assert.equal(resolveAction('Space',moved),undefined);
+  assert.deepEqual(actionShortcuts('fold',moved),['z']);
+  const unbound=setConfig(moved,'key.fold','');
+  assert.deepEqual(actionShortcuts('fold',unbound),[]);
+  assert.ok(helpLines(unbound).includes('命令入口  ·  折叠 / 展开'));
+  const reassigned=setConfig(setConfig(setConfig(config,'key.delete',''),'key.edit','Delete'),'key.copy','Backspace');
+  assert.equal(resolveAction('Delete',reassigned),'edit');
+  assert.equal(resolveAction('Backspace',reassigned),'copy');
+  assert.deepEqual(actionShortcuts('delete',reassigned),[]);
+  assert.deepEqual(actionShortcuts('delete',setConfig(config,'key.delete','')),['Delete','Backspace']);
 });
 test('command menu derives every executable action, usage and completion from one catalog',()=>{
   const suggestions=commandSuggestions('');

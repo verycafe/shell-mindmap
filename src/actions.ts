@@ -5,7 +5,7 @@ export const actions = [
   ['edit', '编辑节点', []], ['parent', '选择父节点', ['h']],
   ['child-select', '展开并选择子节点', ['l']], ['up', '上一个可见节点', ['k']],
   ['down', '下一个可见节点', ['j']], ['fold', '折叠 / 展开', []],
-  ['delete', '删除分支', ['Delete']], ['undo', '撤销', []], ['redo', '重做', []],
+  ['delete', '删除分支', ['Delete', 'Backspace']], ['undo', '撤销', []], ['redo', '重做', []],
   ['save', '保存', ['Ctrl+s']], ['save-as', '另存为', []], ['quit', '退出', []],
   ['help', '帮助', []], ['page-up', '向上翻页', []], ['page-down', '向下翻页', []],
   ['search', '搜索全部节点', ['Ctrl+f']], ['copy', '复制分支', []], ['paste', '粘贴为子分支', []],
@@ -22,6 +22,17 @@ export function resolveAction(key: string, config: AppConfig): string | undefine
   if (key === 'Ctrl+c' || key === 'Ctrl+d') return 'quit';
   for (const [id] of actions) if (config.keys[id] && config.keys[id] === key) return id;
   return actions.find(([, , aliases]) => (aliases as readonly string[]).includes(key))?.[0];
+}
+
+/** Only advertise keys that still resolve to this action after customization. */
+export function actionShortcuts(action: string, config: AppConfig): string[] {
+  const aliases = actions.find(([id]) => id === action)?.[2] ?? [];
+  return [...new Set([config.keys[action] || '', ...aliases])]
+    .filter(key => key !== '' && resolveAction(key, config) === action);
+}
+
+export function displayKey(key: string): string {
+  return key === 'Space' ? '空格' : key;
 }
 
 export function helpLines(config: AppConfig, browser = false): string[] {
@@ -44,7 +55,7 @@ export function helpLines(config: AppConfig, browser = false): string[] {
   ];
   return [
     ...(browser ? directoryHelp : []),
-    '快捷键（浏览模式）', ...actions.map(([id,label]) => `${config.keys[id] || '命令入口'}  ·  ${label}`),
+    '快捷键（浏览模式）', ...actions.map(([id,label]) => `${actionShortcuts(id,config).map(displayKey).join(' / ') || '命令入口'}  ·  ${label}`),
     '', '固定入口：/、:、中文： 打开命令菜单；F1 / 中文？ 帮助',
     '命令菜单：输入英文或中文筛选，↑↓ 选择，Tab 补齐，Enter 执行或填写参数。',
     '节点搜索：默认 f / Ctrl+f；搜索全部节点，Enter 定位。',
@@ -54,8 +65,8 @@ export function helpLines(config: AppConfig, browser = false): string[] {
     'Enter 确认，Esc 取消；粘贴只插入文字。',
     ...(!browser ? ['', ...directoryHelp] : []),
     '', '命令', ...commandDescriptions.map(([name, description]) => `${name}  ${description}`),
-    '', '脑图：最多 500 节点、24 层、每节点 300 字符。',
-    'Markdown：一个 # 根标题与每层缩进 2 空格的 - 列表。',
+    '', '脑图：节点数量、层级和文字长度不设固定上限。',
+    'Markdown：标题与嵌套列表，自动识别缩进；多根或无根时补总节点。',
     '恢复快照在编辑后 1 秒写入；原文件仍需按保存。',
   ];
 }

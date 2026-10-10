@@ -35,6 +35,7 @@ CTRL_F = '\x06'
 CTRL_C = '\x03'
 CTRL_R = '\x12'
 BACKSPACE = '\x7f'
+DELETE = ESC + '[3~'
 PAGE_UP = ESC + '[5~'
 PAGE_DOWN = ESC + '[6~'
 HOME = ESC + '[H'
@@ -362,7 +363,7 @@ class TerminalAcceptance(unittest.TestCase):
         with Terminal(self.home, file, columns=120) as app:
             app.expect('ROOTCONTRAST')
             assert_panel(app, 'Tab 子节点', 'Enter 同级', 'e 编辑', '? 帮助', '/ 命令',
-                         's 保存', 'f 搜索', 'O 文件浏览', 'q 退出')
+                         's 保存', 'f 搜索', 'O 文件浏览', 'q 退出', '空格 折叠/展开', 'Delete 删除')
             panels = [
                 ('?', '快捷键（浏览模式）', ('帮助 · ↑↓ 滚动 / PgUp PgDn 翻页', '? / F1 / Esc 返回 · Enter 保留帮助')),
                 (',', '设置 · ↑↓ 选择 / Enter 修改', ('设置 · ↑↓ 选择 / Enter 修改', '设置立即生效 · : 打开命令 · Esc 返回')),
@@ -412,7 +413,7 @@ class TerminalAcceptance(unittest.TestCase):
             assert_readable_text(self, snapshot, placeholder, row=app.rows - 4)
             assert_readable_text(self, snapshot, hint, row=app.rows - 2)
             if node:
-                assert_readable_text(self, snapshot, '0/300', row=app.rows - 6)
+                assert_readable_text(self, snapshot, '0 字', row=app.rows - 6)
 
         with Terminal(self.home, file, columns=120, cwd=workspace) as app:
             app.expect('INPUTROOT'); app.send(RIGHT)
@@ -434,7 +435,7 @@ class TerminalAcceptance(unittest.TestCase):
                     if title == '编辑节点':
                         app.send('中文👩‍💻')
                         snapshot = app.snapshot(attributes=True)
-                        assert_readable_text(self, snapshot, '5/300', row=app.rows - 6)
+                        assert_readable_text(self, snapshot, '5 字', row=app.rows - 6)
                         assert_readable_text(self, snapshot, '中文👩‍💻', row=app.rows - 4)
                     if title == '搜索全部节点':
                         assert_readable_text(self, app.snapshot(attributes=True), '个结果 · ↑↓ 选择 / Enter 定位')
@@ -800,6 +801,66 @@ class TerminalAcceptance(unittest.TestCase):
             app.send('q'); app.expect('有未保存的修改'); app.send('d'); app.exited_cleanly()
         self.assertEqual(records(file), saved)
 
+    def test_fold_and_delete_keys_preserve_editing_and_undo_complete_branches(self):
+        file = self.home / 'fold-delete.mm'
+        original = [(0, False, 'KEYROOT'), (1, False, 'KEYBRANCH'),
+                    (2, False, 'KEYDESCENDANT'), (1, False, 'KEYPEER')]
+        file.write_text('MM-ZSH-1\n' + ''.join(f'{depth}\t{int(folded)}\t{text}\n'
+                        for depth, folded, text in original), encoding='utf-8')
+        with Terminal(self.home, file) as app:
+            app.expect('4 节点'); app.expect('KEYDESCENDANT')
+            app.send('/'); app.send('fold')
+            self.assertIn('空格', palette_selection(app))
+            app.send(ESC)
+            app.send('/'); app.send('delete')
+            self.assertIn('Delete', palette_selection(app))
+            self.assertIn('Backspace', palette_selection(app))
+            app.send(ESC)
+            app.send(RIGHT); app.send(' ')
+            app.expect('[+]'); app.absent('KEYDESCENDANT')
+            app.send('s'); app.expect('已保存')
+            folded = original.copy()
+            folded[1] = (1, True, 'KEYBRANCH')
+            self.assertEqual(records(file), folded)
+            app.send(' '); app.expect('KEYDESCENDANT')
+            app.send('s'); app.expect('已保存')
+            self.assertEqual(records(file), original)
+
+            # Both terminal Delete encodings remove the whole selected branch,
+            # and undo restores every descendant and its original hierarchy.
+            for key in (DELETE, BACKSPACE):
+                app.send(key); app.expect('2 节点')
+                app.absent('KEYBRANCH'); app.absent('KEYDESCENDANT')
+                app.send('s'); app.expect('已保存')
+                self.assertEqual(records(file), [original[0], original[3]])
+                app.send('u'); app.expect('4 节点'); app.expect('KEYDESCENDANT')
+                app.send('s'); app.expect('已保存')
+                self.assertEqual(records(file), original)
+
+            app.send('g'); app.expect('已回到根节点')
+            for key in (DELETE, BACKSPACE):
+                app.send(key); app.expect('不能删除根节点')
+                app.expect('4 节点')
+            app.send('s'); app.expect('已保存')
+            self.assertEqual(records(file), original)
+
+            # In a text field these keys edit characters, leaving the branch
+            # and its visible descendant intact until the edit is submitted.
+            app.send(RIGHT); app.send('e'); app.expect('编辑节点')
+            app.send(CTRL_U); app.send('ABCD'); app.expect('› ABCD')
+            app.send(HOME); app.send(RIGHT); app.send(' '); app.expect('› A BCD')
+            self.assertIsNotNone(canvas_position(app, 'KEYDESCENDANT', editing=True))
+            app.send(END); app.send(BACKSPACE); app.expect('› A BC')
+            app.send(HOME); app.send(RIGHT); app.send(RIGHT); app.send(DELETE)
+            app.expect('› A C'); app.expect('4 节点')
+            self.assertIsNotNone(canvas_position(app, 'KEYDESCENDANT', editing=True))
+            app.send(ENTER); app.expect('Tab 子节点')
+            app.send('s'); app.expect('已保存')
+            edited = original.copy()
+            edited[1] = (1, False, 'A C')
+            self.assertEqual(records(file), edited)
+            app.send('q'); app.exited_cleanly()
+
     def test_help_entry_enter_preserves_help_edit_buffer_and_paste_safety(self):
         file = self.home / 'help.mm'
         with self.fresh(file) as app:
@@ -840,7 +901,7 @@ class TerminalAcceptance(unittest.TestCase):
             self.assertTrue(snap['lines'][rows - 4].endswith('│'), snap['lines'][rows - 4])
             self.assertEqual(snap['lines'][rows - 4].count('│'), 2)
             self.assertIn('编辑节点', snap['lines'][rows - 6])
-            self.assertTrue(snap['lines'][rows - 6].rstrip().endswith(f'{count}/300'))
+            self.assertTrue(snap['lines'][rows - 6].rstrip().endswith(f'{count} 字'))
             self.assertIn(error or 'Enter 确认', snap['lines'][rows - 2])
             self.assertEqual(snap['lines'][rows - 1], '')
             self.assertEqual((snap['cursorX'], snap['cursorY']), (cursor_x, rows - 4))
@@ -934,14 +995,14 @@ class TerminalAcceptance(unittest.TestCase):
         file = self.home / 'palette-edit.mm'
         with self.fresh(file) as app:
             app.send('/'); app.expect('命令 ·'); app.send(ESC); app.expect('编辑节点')
-            self.assertIn('0/300', app.snapshot()['lines'][app.rows - 6])
+            self.assertIn('0 字', app.snapshot()['lines'][app.rows - 6])
             self.assertFalse(file.exists())
             app.send('/'); app.expect('命令 ·'); app.send('/' + '中' * 300)
-            app.expect('编辑节点'); app.expect('此次输入未插入')
-            rejected = app.snapshot()
-            self.assertIn('0/300', rejected['lines'][app.rows - 6])
-            self.assertIn('输入节点文字，或 / 查看命令', rejected['lines'][app.rows - 4])
-            self.assertEqual((rejected['cursorX'], rejected['cursorY']), (5, app.rows - 4))
+            app.expect('编辑节点'); app.expect('301 字')
+            app.absent('此次输入未插入')
+            app.send(HOME)
+            self.assertIn('│ › /中', app.snapshot()['lines'][app.rows - 4])
+            app.send(CTRL_U); app.expect('0 字')
             app.send('/'); app.expect('命令 ·'); app.send('/')
             app.expect('编辑节点')
             snap = app.snapshot()
@@ -950,11 +1011,11 @@ class TerminalAcceptance(unittest.TestCase):
             app.send('literal'); app.send(ENTER); app.expect('1 节点')
             app.send('\t'); app.expect('添加子节点'); app.send('/'); app.expect('命令 ·')
             app.send(ESC); app.expect('添加子节点')
-            self.assertIn('0/300', app.snapshot()['lines'][app.rows - 6])
+            self.assertIn('0 字', app.snapshot()['lines'][app.rows - 6])
             app.send(ESC); app.expect('1 节点')
             app.send('\t'); app.send('/'); app.send('set layout bilateral'); app.send(ENTER)
             app.expect('双侧布局'); app.expect('添加子节点')
-            self.assertIn('0/300', app.snapshot()['lines'][app.rows - 6])
+            self.assertIn('0 字', app.snapshot()['lines'][app.rows - 6])
             app.expect('1 节点')
             app.send('命令后继续'); app.send(ENTER); app.expect('2 节点')
             app.send('e'); app.send(CTRL_U); app.paste('/help')
@@ -968,6 +1029,54 @@ class TerminalAcceptance(unittest.TestCase):
             app.send(ESC); app.send('s'); app.expect('已保存')
             self.assertEqual([node[2] for node in records(file)], ['/literal', '/help'])
             app.send('q'); app.exited_cleanly()
+
+    def test_long_unicode_node_input_edit_save_and_reopen(self):
+        file = self.home / 'long-text.mm'
+        text = '长文字' * 3000 + '👩‍💻e\u0301TAIL'
+        with self.fresh(file) as app:
+            app.paste(text)
+            app.expect(f'{len(text)} 字')
+            app.expect('TAIL')
+            app.send(ENTER); app.expect('Tab 子节点')
+            app.send('s'); app.expect('已保存')
+            self.assertEqual(records(file)[0][2], text)
+            app.send('q'); app.exited_cleanly()
+        with Terminal(self.home, file) as app:
+            app.expect('1 节点')
+            app.send('e'); app.expect(f'{len(text)} 字')
+            app.send('追加'); app.expect(f'{len(text) + 2} 字')
+            app.send(ENTER); app.expect('Tab 子节点')
+            app.send('s'); app.expect('已保存')
+            self.assertEqual(records(file)[0][2], text + '追加')
+            app.send('q'); app.exited_cleanly()
+
+    def test_large_deep_map_open_search_add_save_and_reopen(self):
+        file = self.home / 'large-deep.mm'
+        lines = ['MM-ZSH-1', '0\t0\tLARGEROOT']
+        lines += [f'{depth}\t0\tDEEP{depth}' for depth in range(1, 121)]
+        lines += [f'1\t0\tWIDE{index}' for index in range(500)]
+        file.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        with Terminal(self.home, file) as app:
+            app.expect('621 节点')
+            app.send('f'); app.expect('搜索全部节点')
+            app.send('DEEP120'); app.expect('? DEEP120')
+            app.expect('… 121层 DEEP120')
+            app.send(ENTER); app.expect('已定位')
+            app.send('\t'); app.expect('添加子节点')
+            app.send('DEEP121'); app.expect('› DEEP121')
+            app.send(ENTER); app.expect('622 节点')
+            app.send('s'); app.expect('已保存')
+            saved = records(file)
+            self.assertEqual(len(saved), 622)
+            self.assertIn((121, False, 'DEEP121'), saved)
+            app.send('q'); app.exited_cleanly()
+        with Terminal(self.home, file) as app:
+            app.expect('622 节点')
+            app.send('f'); app.expect('搜索全部节点')
+            app.send('DEEP121'); app.expect('? DEEP121')
+            app.send(ENTER); app.expect('已定位')
+            app.send('q'); app.exited_cleanly()
+        self.assertEqual(records(file), saved)
 
     def test_command_palette_small_window_scroll_and_help_restore(self):
         file = self.home / 'palette-small.mm'
