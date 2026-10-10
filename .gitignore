@@ -1,0 +1,19 @@
+node_modules/
+dist/
+artifacts/
+*.tgz
+__pycache__/
+.DS_Store
+# Local migration records, personal content, and design-session metadata.
+docs/migration/
+docs/HANDOFF.md
+docs/design/
+scripts/verify-migration.mjs
+legacy/zsh/README.md
+*.mm
+!examples/project.mm
+!legacy/zsh/examples/project.mm
+.app/
+.env
+.env.*
+!.env.example

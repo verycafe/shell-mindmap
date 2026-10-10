@@ -1,0 +1,41 @@
+{
+  "name": "shell-mindmap",
+  "version": "1.2.2",
+  "description": "A local-first terminal mind map editor",
+  "type": "module",
+  "bin": {
+    "SMM": "bin/SMM.js",
+    "mm": "bin/mm.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "examples/project.mm"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "npm@11.10.1",
+  "scripts": {
+    "build": "tsc",
+    "start": "node bin/SMM.js",
+    "dev": "npm run build && node bin/SMM.js",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:pty": "python3 tests/terminal.py",
+    "check": "tsc --noEmit",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "ink": "7.1.1",
+    "react": "19.2.8",
+    "string-width": "8.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/react": "19.2.18",
+    "@xterm/addon-unicode-graphemes": "0.4.0",
+    "@xterm/headless": "6.0.0",
+    "typescript": "5.9.3"
+  }
+}
