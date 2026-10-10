@@ -1,18 +1,35 @@
+# Only the current application, its build/verification files, and README assets
+# belong in the public repository. Local notes and old implementations stay local.
+/*
+!/.gitignore
+!/.npmrc
+!/README.md
+!/package.json
+!/package-lock.json
+!/tsconfig.json
+!/bin/
+!/src/
+!/tests/
+!/.github/
+!/examples/
+/examples/*
+!/docs/
+/docs/*
+!/docs/images/
+/docs/images/*
+!/docs/images/terminal-mindmap.png
+
+# Generated files, private data, and agent instructions are never distributed.
 node_modules/
 dist/
 artifacts/
 *.tgz
 __pycache__/
 .DS_Store
-# Local migration records, personal content, and design-session metadata.
-docs/migration/
-docs/HANDOFF.md
-docs/design/
-scripts/verify-migration.mjs
-legacy/zsh/README.md
+AGENTS.md
+CLAUDE.md
 *.mm
-!examples/project.mm
-!legacy/zsh/examples/project.mm
+!/examples/project.mm
 .app/
 .env
 .env.*
