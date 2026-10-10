@@ -1,16 +1,20 @@
 # Shell Mindmap
 
-在终端里用键盘整理脑图。基于 TypeScript、React 和 Ink，文件保存在本地，运行时无需 AI 或云服务。
+Draw and edit mind maps directly in your terminal. Navigate with the keyboard, build branches, and keep your maps in local plain-text files. Built with TypeScript, React, and Ink; no AI or cloud services are required at runtime.
 
-![Shell Mindmap 终端脑图界面：多层分支与键盘操作提示](docs/images/terminal-mindmap.png)
+![Shell Mindmap running in a terminal, showing a nested mind map and keyboard shortcuts](docs/images/terminal-mindmap.png)
 
-- **目录浏览**：从当前工作目录开始，左侧目录树、右侧脑图列表，忽略无关文件，支持筛选与逐层展开。
-- **脑图编辑**：多语言文字与 emoji 输入（Unicode）、折叠、搜索、分支移动／复制、撤销与重做。
-- **布局与保存**：向右或双侧布局，兼容 `.mm` 文件，支持 Markdown 大纲导入导出、原子保存和崩溃恢复。
+## Features
 
-## 安装
+- **Browse your files.** Start in the current directory, with a folder tree on the left and mind maps on the right. Expand folders as needed, filter entries, and switch to tabs in narrow terminals.
+- **Edit with the keyboard.** Add, rename, fold, move, copy, and delete branches. Search every node, including hidden descendants, and undo or redo changes.
+- **Use your own language.** Node text supports Unicode, including multilingual text and emoji. The current interface labels and messages are in Chinese.
+- **Work with large outlines.** Node count, nesting depth, and text length have no fixed application limits. Practical capacity depends on memory and terminal performance.
+- **Keep your work local.** Save compatible `.mm` files, import and export Markdown outlines, choose right-facing or two-sided layouts, and recover unsaved work from local snapshots.
 
-需要 Git、**Node.js 22.9+**、**npm 11.10.0+**，以及支持 ANSI 和 UTF-8 的终端。可用 `node --version` 和 `npm --version` 检查版本；Node.js 自带的 npm 不一定满足要求。
+## Installation
+
+You need Git, **Node.js 22.9+**, **npm 11.10.0+**, and an interactive terminal with ANSI and UTF-8 support. Check your versions with `node --version` and `npm --version`; the npm version bundled with Node.js may need updating.
 
 ```sh
 git clone https://github.com/verycafe/shell-mindmap.git
@@ -20,43 +24,69 @@ npm run build
 npm link
 ```
 
-`npm link` 将全局命令链接到当前项目，保留这个目录；更新代码后重新构建即可。Windows PowerShell 若限制脚本执行，可使用 `npm.cmd` 和 `SMM.cmd`。不使用全局链接时，执行 `node bin/SMM.js`。
+`npm link` makes the `SMM` command available globally by linking to this checkout. Keep the project directory in place and rebuild after updating the code. To run without a global link, use `node bin/SMM.js` from the project directory.
 
-## 使用
+If PowerShell blocks script wrappers on Windows, use `npm.cmd` and `SMM.cmd`. The older `mm` command remains available as a compatibility alias.
 
-在任意工作目录执行：
+## Getting started
+
+Run `SMM` from any working directory:
 
 ```sh
-SMM                           # 浏览当前目录，打开或新建脑图
-SMM "我的脑图.mm"              # 直接编辑；文件不存在时新建
+SMM                               # Browse this directory; open or create a map
+SMM "My map.mm"                    # Open a map, or start a new one at this path
 SMM import outline.md -o outline.mm
 SMM export outline.mm -o outline.md
 ```
 
-首页按 `Tab` 切换目录树与脑图列表，方向键选择，`Enter` 打开；`Backspace` 返回上级目录，`n` 在当前浏览目录新建。
+With no file argument, `SMM` always opens the directory browser. Press `Tab` to switch between folders and maps, use the arrow keys to select an entry, and press `Enter` to open it. `Backspace` goes to the parent directory; `n` creates a map in the directory you are browsing.
 
-编辑界面的常用快捷键：
+Type a root topic and press `Enter` to confirm it. Press `Tab` to add a child; on a non-root node, press `Enter` to add a sibling. Press `s` to save. A new map is written to disk when you save it.
 
-| 按键 | 操作 |
+### Keyboard shortcuts
+
+These defaults apply while navigating a mind map:
+
+| Key | Action |
 | --- | --- |
-| Tab / Enter | 添加子节点／同级节点 |
-| `e` | 编辑文字 |
-| 空格 | 折叠／展开当前分支 |
-| Delete / Backspace / `d` | 删除当前分支及后代，`u` 撤销 |
-| `f` | 搜索节点 |
-| `s` / `S` | 保存／另存为 |
-| `u` / `r` | 撤销／重做 |
-| `O` / `q` | 文件浏览／退出 |
-| `/` | 命令菜单，支持英文与中文模糊筛选 |
-| `?` / F1 | 完整帮助 |
+| Arrow keys | Navigate nodes; left selects the parent, right unfolds and selects a child |
+| `Tab` / `Enter` | Add a child / sibling |
+| `e` | Edit the selected node |
+| `Space` | Fold or unfold the selected branch |
+| `Delete` / `Backspace` / `d` | Delete the selected branch and its descendants |
+| `f` / `Ctrl+F` | Search all nodes |
+| `c` / `p` | Copy a branch / paste it as a child |
+| `m` | Move a branch to another parent |
+| `[` / `]` | Move a branch up / down among its siblings |
+| `s` / `S` | Save / save as |
+| `u` / `r` | Undo / redo |
+| `Shift` + arrow keys | Pan the view; `H` / `J` / `K` / `L` also pan left / down / up / right |
+| `g` / `Home` | Select the root and recenter the view |
+| `O` / `q` | Open the file browser / quit |
+| `/` | Open the command menu |
+| `?` / `F1` | Open help |
 
-选中节点后直接按空格折叠／展开，按 Delete 删除分支；Mac 键盘的 Delete（退格）同样支持。命令菜单会在 `/fold`、`/delete` 等操作旁显示当前可用的快捷键。文字编辑时这些按键仍用于输入和删字。
+On Mac keyboards, both the Delete key (backspace) and `Fn+Delete` can delete a branch. The root cannot be deleted. Press `u` to undo a deletion. While editing text, Space inserts a space and the deletion keys only remove characters.
 
-默认在工作目录保存脑图；从目录浏览器新建时，使用当前浏览目录。配置和恢复快照存放在 `~/Shell Mindmap/.app`，修改保存目录不会移动已打开的文件。旧 `mm` 命令继续可用。
+The command menu supports fuzzy filtering by English command names or Chinese descriptions. Use the arrow keys to choose a command, `Tab` to complete it, and `Enter` to run it. Commands such as `/fold` and `/delete` display their current keyboard shortcuts. `SMM keys` lists available bindings; custom bindings take priority over convenience aliases.
 
-节点数量、层级和文字长度不设固定上限。Markdown 可用多级标题和嵌套无序列表，自动识别空格或 Tab 缩进；多个顶层标题或无根列表会自动加上“导入脑图”总节点。不支持的内容会报错，命令行转换不会覆盖已有文件。字号缩放由终端控制。
+## Files and Markdown
 
-## 开发
+Maps use the existing `.mm` plain-text format. New maps normally save in the working directory; maps created from the file browser use the directory you chose there. Saving an existing map writes back to its original path. You can set a default save directory with `SMM config set save-dir PATH`.
+
+Configuration and recovery snapshots are shared across workspaces and stored under `~/Shell Mindmap/.app`. This is the application's data directory, not the default location for your maps. Changing the save directory does not move existing files.
+
+Markdown import accepts headings (`#` through `######`) and nested single-line unordered lists, recognizing relative indentation with spaces or tabs. Multiple top-level headings or lists without a root heading get a generated root node, preserving the original nodes and their order. Unsupported Markdown content produces an error instead of being silently dropped. Command-line import and export do not overwrite existing output files.
+
+The default layout grows to the right. For a two-sided layout, run:
+
+```sh
+SMM config set layout bilateral
+```
+
+Font size is controlled by your terminal.
+
+## Development
 
 ```sh
 npm run check
@@ -64,4 +94,6 @@ npm test
 npm run test:pty
 ```
 
-PTY 测试需要 macOS/Linux 与 Python 3。仓库提供 macOS、Linux、Windows 的 CI 配置；本机验证环境为 macOS，其他系统的真实终端体验仍需验证。依赖安装沿用锁文件，`.npmrc` 要求新解析的版本已发布至少 7 天。
+PTY tests require macOS or Linux and Python 3. CI is configured for macOS, Linux, and Windows; terminal workflow tests run on macOS and Linux.
+
+Install dependencies with `npm ci` to use the committed lockfile. The repository's `.npmrc` requires newly resolved dependency versions to have been published for at least seven days.
